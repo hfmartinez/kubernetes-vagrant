@@ -36,30 +36,30 @@ kubectl get nodes
 ```
 ## Optional Modifications
 ### Add more workers 
-change NodeCount inside Vagrantfile
+Change NodeCount inside Vagrantfile
 ```ruby
-  end
+end
 
-  # Change to add more workers
-  NodeCount = 1
+# Change to add more workers
+NodeCount = 1
 
-  (1..NodeCount).each do |i|
+(1..NodeCount).each do |i|
 ```
 ### Modify RAM and CPU of virtual machines
-change the following parameters inside Vagrantfile
+Change the following parameters inside Vagrantfile
 ```ruby
-    #master
-    master.vm.provider "virtualbox" do |v|
-        v.name = "master"
-        v.memory = 2048
-        v.cpus = 2
-    end
-    #workers
-    worker.vm.provider "virtualbox" do |v|
-        v.name = "worker#{i}"
-        v.memory = 2048
-        v.cpus = 1
-    end
+#master
+master.vm.provider "virtualbox" do |v|
+    v.name = "master"
+    v.memory = 2048
+    v.cpus = 2
+end
+#workers
+worker.vm.provider "virtualbox" do |v|
+    v.name = "worker#{i}"
+    v.memory = 2048
+    v.cpus = 1
+end
 ```
 ## References
 * This repository was forked from [Innablr/K8s_ubuntu](https://github.com/Innablr/k8s_ubuntu)
