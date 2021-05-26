@@ -7,7 +7,7 @@ Simple way to set up a kubernetes cluster with vagrant on virtualbox
 
 The following are the system prerequisites:
 
-* 8Gb of RAM at least
+* 8Gb of RAM minimum
 * 2.4GHz processor or higher
 * [Git](https://git-scm.com/downloads) - Git
 * [Virtual Box](https://www.virtualbox.org/wiki/Downloads) - Virtualization software.
@@ -15,7 +15,7 @@ The following are the system prerequisites:
 
 ## Install Environment
 
-- Clone the following repository by using the statement:
+- Clone the following repository by using this statement:
 ```
 git clone https://github.com/hfmartinez/kubernetes-vagrant.git
 ```
@@ -34,7 +34,33 @@ vagrant ssh master
 ```
 kubectl get nodes
 ```
+## Optional Modifications
+### Add more workers 
+change NodeCount inside Vagrantfile
+```ruby
+  end
 
+  # Change to add more workers
+  NodeCount = 1
+
+  (1..NodeCount).each do |i|
+```
+### Modify RAM and CPU of virtual machines
+change the following parameters inside Vagrantfile
+```ruby
+    #master
+    master.vm.provider "virtualbox" do |v|
+        v.name = "master"
+        v.memory = 2048
+        v.cpus = 2
+    end
+    #workers
+    worker.vm.provider "virtualbox" do |v|
+        v.name = "worker#{i}"
+        v.memory = 2048
+        v.cpus = 1
+    end
+```
 ## References
 * This repository was forked from [Innablr/K8s_ubuntu](https://github.com/Innablr/k8s_ubuntu)
 * Installing Addons for Kubernetes [Installing Addons](https://kubernetes.io/docs/concepts/cluster-administration/addons/)
