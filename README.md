@@ -30,10 +30,11 @@ vagrant up
 vagrant ssh master
 ```
 
-- Run the next command to validate the installation
+- Run the next command to validate the installation (inside master)
 ```
 kubectl get nodes
 ```
 
 ## References
-This repository forked from [K8s_ubuntu](https://github.com/Innablr/k8s_ubuntu)
+* This repository was forked from [Innablr/K8s_ubuntu](https://github.com/Innablr/k8s_ubuntu)
+* Installing Addons for Kubernetes [Installing Addons](https://kubernetes.io/docs/concepts/cluster-administration/addons/)
