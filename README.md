@@ -5,7 +5,7 @@ Simple way to set up a kubernetes cluster with vagrant on virtualbox
 
 ## System Prerequisites 📋
 
-Below are the system prerequisites:
+The following are the system prerequisites:
 
 * 8Gb of RAM at least
 * 2.4GHz processor or higher
@@ -34,3 +34,6 @@ vagrant ssh master
 ```
 kubectl get nodes
 ```
+
+## References
+This repository forked from [K8s_ubuntu](https://github.com/Innablr/k8s_ubuntu)
