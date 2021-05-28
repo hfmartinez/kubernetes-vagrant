@@ -25,14 +25,9 @@ git clone https://github.com/hfmartinez/kubernetes-vagrant.git
 vagrant up
 ```
 
-- Enter to master machine
+- Run the next command to validate the installation
 ```
-vagrant ssh master
-```
-
-- Run the next command to validate the installation (inside master)
-```
-kubectl get nodes
+vagrant ssh master -c 'kubectl get nodes -o wide'
 ```
 ## Optional Modifications
 ### Add more workers 

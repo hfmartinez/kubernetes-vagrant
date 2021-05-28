@@ -12,8 +12,19 @@ usermod -aG docker vagrant
 
 # Enable docker service
 echo "[TASK 2] Enable and start docker service"
+cat > /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
 systemctl enable docker
-systemctl start docker
+systemctl daemon-reload
+systemctl restart docker
 
 # Add sysctl settings
 echo "[TASK 4] Add sysctl settings"
