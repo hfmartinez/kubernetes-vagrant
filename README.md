@@ -33,12 +33,13 @@ vagrant ssh master -c 'kubectl get nodes -o wide'
 ### Add more workers 
 Change NodeCount inside Vagrantfile
 ```ruby
-end
+Vagrant.configure(2) do |config|
 
-# Change to add more workers
-NodeCount = 1
-
-(1..NodeCount).each do |i|
+  # Change to add more workers
+  NodeCount = 1
+  
+  #global requirements
+  config.vm.provision "shell", path: "requirements.sh", :args => NodeCount
 ```
 ### Modify RAM and CPU of virtual machines
 Change the following parameters inside Vagrantfile

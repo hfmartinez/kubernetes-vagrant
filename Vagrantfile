@@ -27,7 +27,7 @@ Vagrant.configure(2) do |config|
     config.vm.define "worker#{i}" do |worker|
       worker.vm.box = "bento/ubuntu-20.04"
       worker.vm.hostname = "worker#{i}"
-      worker.vm.network "private_network", ip: "192.168.10.#{i}"
+      worker.vm.network "private_network", ip: "192.168.10.#{i+1}"
       worker.vm.provider "virtualbox" do |v|
         v.name = "worker#{i}"
         v.memory = 2048
