@@ -1,6 +1,16 @@
 #!/bin/bash
 
-echo "[TASK 1] Install docker"
+echo "[TASK 1] update hosts"
+echo '192.168.10.100 master master' | tee -a /etc/hosts
+init=1
+stop=$1
+for (( c=$init; c<=$stop; c++ ))
+do
+        echo "192.168.10.$c worker$c worker$c" | tee -a /etc/hosts
+done
+
+
+echo "[TASK 2] Install docker"
 apt-get install apt-transport-https ca-certificates curl software-properties-common -y
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
 add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
@@ -11,7 +21,7 @@ apt-get install docker-ce -y
 usermod -aG docker vagrant
 
 # Enable docker service
-echo "[TASK 2] Enable and start docker service"
+echo "[TASK 3] Enable and start docker service"
 cat > /etc/docker/daemon.json <<EOF
 {
   "exec-opts": ["native.cgroupdriver=systemd"],

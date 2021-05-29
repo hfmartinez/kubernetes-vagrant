@@ -2,8 +2,12 @@
 # vi: set ft=ruby :
 
 Vagrant.configure(2) do |config|
+
+  # Change to add more workers
+  NodeCount = 1
+  
   #global requirements
-  config.vm.provision "shell", path: "requirements.sh"
+  config.vm.provision "shell", path: "requirements.sh", :args => NodeCount
 
   # Kubernetes Master
   config.vm.define "master" do |master|
@@ -18,9 +22,6 @@ Vagrant.configure(2) do |config|
     master.vm.provision "shell", path: "master.sh"
     master.vm.box_download_insecure = true
   end
-
-  # Change to add more workers
-  NodeCount = 1
 
   (1..NodeCount).each do |i|
     config.vm.define "worker#{i}" do |worker|
