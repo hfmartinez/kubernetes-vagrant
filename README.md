@@ -104,3 +104,7 @@ end
 
 - This repository was forked from [Innablr/K8s_ubuntu](https://github.com/Innablr/k8s_ubuntu)
 - Installing Addons for Kubernetes [Installing Addons](https://kubernetes.io/docs/concepts/cluster-administration/addons/)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
