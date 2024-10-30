@@ -1,62 +1,104 @@
-# Kubernetes Cluster
+# Kubernetes Cluster Setup
 
-Simple way to set up a kubernetes cluster with vagrant on virtualbox
+This repository provides a simple way to set up a Kubernetes cluster using Vagrant. It is designed for developers and system administrators who want to quickly create a local Kubernetes environment for testing, learning, or development purposes without the need for complex cloud infrastructure.
 
+## Description
+
+Kubernetes is an open-source container orchestration platform that automates the deployment, scaling, and management of containerized applications. Setting up a Kubernetes cluster can be complex and time-consuming, especially for those who are new to the technology. This repository simplifies that process by leveraging Vagrant, a popular tool for managing virtual machine environments.
+
+### Key Features
+
+- **Easy Setup**: With just a few commands, users can set up a fully functional Kubernetes cluster on their local machines.
+- **Customization Options**: Users can easily modify the number of worker nodes, as well as allocate resources such as RAM and CPU, to suit their development needs.
+- **Testing and Development**: Ideal for developers who want to test their applications in a Kubernetes environment without needing access to cloud resources.
+- **Open Source**: This project is open-source, allowing users to contribute and adapt the setup for their specific requirements.
+
+### Use Cases
+
+- **Learning and Experimentation**: Perfect for those new to Kubernetes who want to learn about container orchestration and practice deploying applications in a Kubernetes environment.
+- **Development**: Developers can use this setup to develop and test their containerized applications locally before deploying them to production environments.
+- **Demonstrations**: Useful for creating demonstrations of Kubernetes features and capabilities without requiring a cloud provider or extensive infrastructure setup.
+
+By following the instructions in this repository, you can quickly get your own Kubernetes cluster up and running, enabling you to dive into the world of container orchestration with ease.
+
+## Table of Contents
+
+- [System Prerequisites](#system-prerequisites-)
+- [Installation Instructions](#installation-instructions)
+- [Validating the Installation](#validating-the-installation)
+- [Optional Modifications](#optional-modifications)
+  - [Add More Workers](#add-more-workers)
+  - [Modify RAM and CPU of Virtual Machines](#modify-ram-and-cpu-of-virtual-machines)
+- [References](#references)
 
 ## System Prerequisites 📋
 
-The following are the system prerequisites:
+Before you begin, ensure your system meets the following prerequisites:
 
-* 8Gb of RAM minimum
-* 2.4GHz processor or higher
-* [Git](https://git-scm.com/downloads) - Git
-* [Virtual Box](https://www.virtualbox.org/wiki/Downloads) - Virtualization software.
-* [Vagrant](https://www.vagrantup.com/downloads.html) - Virtual machine management tool.
+- **RAM**: Minimum of 8 GB
+- **Processor**: 2.4 GHz or higher
+- **Software Requirements**:
+  - [Git](https://git-scm.com/downloads) - For version control
+  - [Vagrant](https://www.vagrantup.com/downloads.html) - Virtual machine management tool
 
-## Install Environment
+## Installation Instructions
 
-- Clone the following repository by using this statement:
-```
+Follow these steps to set up the Kubernetes cluster:
+
+1. **Clone the Repository**: Use the following command to clone the repository:
+
+```bash
 git clone https://github.com/hfmartinez/kubernetes-vagrant.git
 ```
 
-- Inside the repository folder that contains the Vagrantfile, start the virtual machines: 
-```
+2. **Start the Virtual Machines**: Navigate to the cloned repository folder (where the `Vagrantfile` is located) and start the virtual machines:
+
+```bash
+cd kubernetes-vagrant
 vagrant up
 ```
 
-- Run the next command to validate the installation
-```
+3.**Validate the Installation**: After the VMs are up, run the following command to validate the installation:
+
+```bash
 vagrant ssh master -c 'kubectl get nodes -o wide'
 ```
+
 ## Optional Modifications
-### Add more workers 
-Change NodeCount inside Vagrantfile
+
+### Add More Workers
+
+To increase the number of worker nodes, change the `NodeCount` variable inside the `Vagrantfile`:
+
 ```ruby
 Vagrant.configure(2) do |config|
 
   # Change to add more workers
-  NodeCount = 1
-  
-  #global requirements
-  config.vm.provision "shell", path: "requirements.sh", :args => NodeCount
+  NodeCount = 2
+  Provider = "vmware_desktop" # change if needed
 ```
-### Modify RAM and CPU of virtual machines
-Change the following parameters inside Vagrantfile
+
+### Modify RAM and CPU of Virtual Machines
+
+You can adjust the RAM and CPU allocations for the master and worker nodes by modifying the following parameters in the `Vagrantfile`:
+
 ```ruby
-#master
-master.vm.provider "virtualbox" do |v|
+# Master Node Configuration
+master.vm.provider Provider do |v|
     v.name = "master"
     v.memory = 2048
     v.cpus = 2
 end
-#workers
-worker.vm.provider "virtualbox" do |v|
+
+# Worker Node Configuration
+worker.vm.provider Provider do |v|
     v.name = "worker#{i}"
     v.memory = 2048
     v.cpus = 1
 end
 ```
+
 ## References
-* This repository was forked from [Innablr/K8s_ubuntu](https://github.com/Innablr/k8s_ubuntu)
-* Installing Addons for Kubernetes [Installing Addons](https://kubernetes.io/docs/concepts/cluster-administration/addons/)
+
+- This repository was forked from [Innablr/K8s_ubuntu](https://github.com/Innablr/k8s_ubuntu)
+- Installing Addons for Kubernetes [Installing Addons](https://kubernetes.io/docs/concepts/cluster-administration/addons/)
