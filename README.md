@@ -58,7 +58,9 @@ cd kubernetes-vagrant
 vagrant up
 ```
 
-3.**Validate the Installation**: After the VMs are up, run the following command to validate the installation:
+## Validating the Installation
+
+After the VMs are up, run the following command to validate the installation:
 
 ```bash
 vagrant ssh master -c 'kubectl get nodes -o wide'
