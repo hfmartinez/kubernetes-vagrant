@@ -88,15 +88,15 @@ You can adjust the RAM and CPU allocations for the master and worker nodes by mo
 # Master Node Configuration
 master.vm.provider Provider do |v|
     v.name = "master"
-    v.memory = 2048
-    v.cpus = 2
+    v.memory = 4096
+    v.cpus = 4
 end
 
 # Worker Node Configuration
 worker.vm.provider Provider do |v|
     v.name = "worker#{i}"
-    v.memory = 2048
-    v.cpus = 1
+    v.memory = 4096
+    v.cpus = 2
 end
 ```
 

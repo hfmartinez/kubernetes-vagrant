@@ -16,8 +16,8 @@ Vagrant.configure(2) do |config|
     master.vm.hostname = "master"
     master.vm.network "private_network", ip: "192.168.10.100"
     master.vm.provider Provider do |v|
-      v.memory = 2048
-      v.cpus = 2
+      v.memory = 4096
+      v.cpus = 4
       v.gui = true
     end
     master.vm.provision "shell", path: "master.sh"
@@ -29,8 +29,8 @@ Vagrant.configure(2) do |config|
       worker.vm.hostname = "worker#{i}"
       worker.vm.network "private_network", ip: "192.168.10.#{i+1}"
       worker.vm.provider Provider do |v|
-        v.memory = 2048
-        v.cpus = 1
+        v.memory = 4096
+        v.cpus = 2
         v.gui = true
       end
       worker.vm.provision "shell", path: "worker.sh"
