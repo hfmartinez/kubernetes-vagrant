@@ -1,2 +1,4 @@
 .vagrant
 joincluster.sh
+join-command.sh
+requirements.sh

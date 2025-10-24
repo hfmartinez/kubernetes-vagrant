@@ -1,0 +1,487 @@
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAY 1: Global deps en todos los nodos (Ubuntu/Debian)
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Install Global Kubernetes Dependencies (Ubuntu/Debian)
+  hosts: all
+  become: yes
+  vars:
+    k8s_version: "1.29.1-1.1"
+    k8s_repo_series: "v1.29"
+    k8s_keyring_path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    containerd_config: /etc/containerd/config.toml
+
+  tasks:
+    - name: "[TASK 1] Disable swap (runtime)"
+      command: swapoff -a
+      when: ansible_swaptotal_mb | default(0) | int > 0
+      changed_when: ansible_swaptotal_mb | default(0) | int > 0
+
+    - name: "[TASK 1] Disable swap permanently in /etc/fstab"
+      replace:
+        path: /etc/fstab
+        regexp: '^\s*([^#]\S+\s+\S+\s+swap\s+\S+\s+\S+\s+\S+)'
+        replace: '# \1'
+        backup: yes
+
+    - name: "[TASK 2] Ensure required kernel modules are configured"
+      copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "[TASK 2] Load kernel modules now"
+      command: modprobe {{ item }}
+      loop: [overlay, br_netfilter]
+      changed_when: false
+      failed_when: false
+
+    - name: "[TASK 2] Apply sysctl parameters for Kubernetes networking"
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/k8s.conf
+        state: present
+        reload: yes
+      loop:
+        - { name: 'net.bridge.bridge-nf-call-iptables',  value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward',                 value: '1' }
+
+    - name: "[TASK 3] Update APT cache"
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: "[TASK 3] Install containerd runtime"
+      apt:
+        name: containerd
+        state: present
+
+    - name: "[TASK 3] Ensure containerd config directory exists"
+      file:
+        path: /etc/containerd
+        state: directory
+        mode: '0755'
+
+    - name: "[TASK 3] Generate default containerd configuration if missing"
+      command: bash -lc "containerd config default > {{ containerd_config }}"
+      args: { creates: "{{ containerd_config }}" }
+
+    - name: "[TASK 3] Enable SystemdCgroup in containerd configuration"
+      lineinfile:
+        path: "{{ containerd_config }}"
+        regexp: '^(\s*)SystemdCgroup\s*=\s*false'
+        line: '\1SystemdCgroup = true'
+        backrefs: yes
+
+    - name: "[TASK 3] Ensure containerd service is enabled and running"
+      systemd:
+        name: containerd
+        enabled: yes
+        state: started
+
+    - name: "[TASK 4] Install base packages for Kubernetes repository"
+      apt:
+        name: [apt-transport-https, ca-certificates, curl, gpg]
+        state: present
+
+    - name: "[TASK 4] Create keyrings directory"
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: "[TASK 4] Download Kubernetes Release.key"
+      get_url:
+        url: "https://pkgs.k8s.io/core:/stable:/{{ k8s_repo_series }}/deb/Release.key"
+        dest: "/etc/apt/keyrings/kubernetes-Release.key"
+        mode: '0644'
+
+    - name: "[TASK 4] Convert Release.key to binary keyring (gpg --dearmor)"
+      command:
+        argv: [gpg, --dearmor, --yes, --output, "{{ k8s_keyring_path }}", "/etc/apt/keyrings/kubernetes-Release.key"]
+      args: { creates: "{{ k8s_keyring_path }}" }
+
+    - name: "[TASK 4] Ensure keyring permissions"
+      file:
+        path: "{{ k8s_keyring_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: "[TASK 4] Add Kubernetes repository"
+      apt_repository:
+        repo: "deb [signed-by={{ k8s_keyring_path }}] https://pkgs.k8s.io/core:/stable:/{{ k8s_repo_series }}/deb/ /"
+        filename: kubernetes
+        state: present
+
+    - name: "[TASK 4] Update APT cache after adding Kubernetes repo"
+      apt:
+        update_cache: yes
+
+    - name: "[TASK 4] Install kubelet, kubeadm, kubectl with specific version"
+      apt:
+        name:
+          - "kubelet={{ k8s_version }}"
+          - "kubeadm={{ k8s_version }}"
+          - "kubectl={{ k8s_version }}"
+        state: present
+
+    - name: "[TASK 4] Get currently held packages"
+      command: apt-mark showhold
+      register: held_pkgs
+      changed_when: false
+      failed_when: false
+
+    - name: "[TASK 4] Hold packages kubelet/kubeadm/kubectl/containerd"
+      command: apt-mark hold {{ item }}
+      loop: [kubelet, kubeadm, kubectl, containerd]
+      when: item not in (held_pkgs.stdout_lines | default([]))
+      changed_when: true
+
+    - name: "[TASK 5] Ensure kubelet service is enabled and started"
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: started
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAY 2: Control-plane (init + Calico) con restart de containerd seguro
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Initialize Kubernetes control plane and install Calico (resilient pulls)
+  hosts: control-plane
+  become: yes
+  vars:
+    k8s_version: "v1.29.1"
+    pod_network_cidr: "192.168.0.0/16"   # Calico default
+    image_repository: "registry.k8s.io"  # ajusta si usas mirror
+
+    calico_manifest_url: "https://raw.githubusercontent.com/projectcalico/calico/master/manifests/calico.yaml"
+    calico_manifest_path: "/root/calico.yaml"
+
+    kube_admin_conf: "/etc/kubernetes/admin.conf"
+    kube_user: "vagrant"
+    kube_user_home: "/home/vagrant"
+    vagrant_join_path: "/vagrant/join-command.sh"
+    root_join_path: "/root/join-command.sh"
+
+    # Proxy opcional para containerd (dejar vacío si no aplica)
+    containerd_http_proxy: ""
+    containerd_https_proxy: ""
+    containerd_no_proxy: "127.0.0.1,localhost,10.0.0.0/8,192.168.0.0/16"
+
+  pre_tasks:
+    - name: Check if control plane already initialized
+      stat:
+        path: "{{ kube_admin_conf }}"
+      register: adminconf_stat
+
+  tasks:
+    # Validación y reparación segura de containerd (SIN handlers)
+    - name: Validate current containerd config
+      command: containerd config dump
+      register: containerd_dump
+      changed_when: false
+      failed_when: false
+
+    - name: Backup invalid containerd config (if parse fails)
+      copy:
+        src: /etc/containerd/config.toml
+        dest: "/etc/containerd/config.toml.broken.{{ '%Y%m%d%H%M%S' | strftime }}"
+        remote_src: true
+      when: containerd_dump.rc != 0
+
+    - name: Regenerate default containerd config when invalid
+      command: bash -lc "containerd config default > /etc/containerd/config.toml"
+      when: containerd_dump.rc != 0
+
+    - name: Ensure SystemdCgroup = true
+      lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: '^(\s*)SystemdCgroup\s*=\s*false'
+        line: '\1SystemdCgroup = true'
+        backrefs: yes
+      register: cg_change
+
+    - name: Ensure sandbox_image line is set (replace if exists)
+      replace:
+        path: /etc/containerd/config.toml
+        regexp: '^\s*sandbox_image\s*=\s*".*"\s*$'
+        replace: '  sandbox_image = "registry.k8s.io/pause:3.9"'
+      register: sb_replace
+
+    - name: Check if sandbox_image exists after replace
+      shell: grep -E '^\s*sandbox_image\s*=\s*".*"\s*$' /etc/containerd/config.toml || true
+      register: sb_exists
+      changed_when: false
+
+    - name: Insert sandbox_image under CRI section when missing
+      lineinfile:
+        path: /etc/containerd/config.toml
+        insertafter: '^\[plugins\."io\.containerd\.grpc\.v1\.cri"\]'
+        line: '  sandbox_image = "registry.k8s.io/pause:3.9"'
+      when: sb_exists.stdout | length == 0
+      register: sb_insert
+
+    - name: Optionally configure containerd proxy (only if vars provided)
+      when: (containerd_http_proxy | length > 0) or (containerd_https_proxy | length > 0)
+      block:
+        - name: Create systemd drop-in directory for containerd
+          file:
+            path: /etc/systemd/system/containerd.service.d
+            state: directory
+            mode: "0755"
+
+        - name: Write proxy configuration
+          copy:
+            dest: /etc/systemd/system/containerd.service.d/proxy.conf
+            mode: "0644"
+            content: |
+              [Service]
+              {% if containerd_http_proxy|length > 0 %}Environment="HTTP_PROXY={{ containerd_http_proxy }}"{% endif %}
+              {% if containerd_https_proxy|length > 0 %}Environment="HTTPS_PROXY={{ containerd_https_proxy }}"{% endif %}
+              Environment="NO_PROXY={{ containerd_no_proxy }}"
+
+        - name: Daemon-reload for systemd (proxy drop-in)
+          systemd:
+            daemon_reload: yes
+
+        - name: Restart containerd due to proxy change
+          systemd:
+            name: containerd
+            state: restarted
+            enabled: yes
+
+    - name: Restart containerd if config changed (safe)
+      block:
+        - name: Restart containerd
+          systemd:
+            name: containerd
+            state: restarted
+            enabled: yes
+      when: (cg_change is changed) or (sb_replace is changed) or (sb_insert is changed)
+      rescue:
+        - name: Emergency regenerate default config (on restart failure)
+          command: bash -lc "containerd config default > /etc/containerd/config.toml"
+
+        - name: Re-apply safe edits - SystemdCgroup
+          lineinfile:
+            path: /etc/containerd/config.toml
+            regexp: '^(\s*)SystemdCgroup\s*=\s*false'
+            line: '\1SystemdCgroup = true'
+            backrefs: yes
+
+        - name: Re-apply safe edits - sandbox_image
+          lineinfile:
+            path: /etc/containerd/config.toml
+            insertafter: '^\[plugins\."io\.containerd\.grpc\.v1\.cri"\]'
+            line: '  sandbox_image = "registry.k8s.io/pause:3.9"'
+
+        - name: Final restart containerd after repair
+          systemd:
+            name: containerd
+            state: restarted
+            enabled: yes
+
+    # Pre-pull + init kubeadm
+    - name: Pre-pull Kubernetes images (with retries; tolerate failure)
+      command: >
+        kubeadm config images pull
+        --kubernetes-version {{ k8s_version }}
+        --image-repository {{ image_repository }}
+      register: prepull_result
+      retries: 5
+      delay: 10
+      until: prepull_result.rc == 0
+      failed_when: false
+      when: adminconf_stat.stat.exists == false
+
+    - name: Initialize the control plane with kubeadm
+      command: >
+        kubeadm init
+        --kubernetes-version {{ k8s_version }}
+        --pod-network-cidr {{ pod_network_cidr }}
+        --image-repository {{ image_repository }}
+      register: kubeadm_init
+      when: adminconf_stat.stat.exists == false
+
+    - name: Ensure .kube directory for {{ kube_user }}
+      file:
+        path: "{{ kube_user_home }}/.kube"
+        state: directory
+        owner: "{{ kube_user }}"
+        group: "{{ kube_user }}"
+        mode: "0755"
+
+    - name: Configure kubeconfig for {{ kube_user }}
+      copy:
+        src: "{{ kube_admin_conf }}"
+        dest: "{{ kube_user_home }}/.kube/config"
+        owner: "{{ kube_user }}"
+        group: "{{ kube_user }}"
+        mode: "0644"
+        remote_src: yes
+
+    - name: Download Calico manifest
+      get_url:
+        url: "{{ calico_manifest_url }}"
+        dest: "{{ calico_manifest_path }}"
+        mode: "0644"
+
+    - name: Apply Calico CNI
+      command: kubectl apply -f {{ calico_manifest_path }}
+      environment:
+        KUBECONFIG: "{{ kube_user_home }}/.kube/config"
+      register: calico_apply
+      changed_when: "'created' in calico_apply.stdout or 'configured' in calico_apply.stdout"
+
+    - name: Generate fresh join command
+      command: kubeadm token create --print-join-command
+      register: join_cmd
+
+    - name: Write join command to /vagrant (for worker nodes)
+      copy:
+        content: "{{ join_cmd.stdout | trim }}\n"
+        dest: "/vagrant/join-command.sh"
+        mode: "0755"
+
+    - name: Write join command to root home
+      copy:
+        content: "{{ join_cmd.stdout | trim }}\n"
+        dest: "/root/join-command.sh"
+        mode: "0755"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAY 3: Workers (join) con manejo seguro de containerd
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Join worker nodes to Kubernetes cluster (safe containerd handling)
+  hosts: "node_*"
+  become: yes
+  vars:
+    join_script_path: "/vagrant/join-command.sh"
+    kubelet_conf: "/etc/kubernetes/kubelet.conf"
+    containerd_conf: "/etc/containerd/config.toml"
+    pause_image: 'registry.k8s.io/pause:3.9'
+
+  pre_tasks:
+    - name: Check that join script exists on the VM
+      stat:
+        path: "{{ join_script_path }}"
+      register: join_stat
+
+    - name: Fail early if join script is missing
+      fail:
+        msg: >-
+          {{ join_script_path }} not found. Run the control-plane play first
+          so it generates the join command into /vagrant.
+      when: not join_stat.stat.exists
+
+    - name: Detect if node is already joined (kubelet.conf present)
+      stat:
+        path: "{{ kubelet_conf }}"
+      register: kubelet_conf_stat
+
+  tasks:
+    - name: Validate current containerd config
+      command: containerd config dump
+      register: containerd_dump
+      changed_when: false
+      failed_when: false
+
+    - name: Backup invalid containerd config (if parse fails)
+      copy:
+        src: "{{ containerd_conf }}"
+        dest: "{{ containerd_conf }}.broken.{{ '%Y%m%d%H%M%S' | strftime }}"
+        remote_src: true
+      when: containerd_dump.rc != 0
+
+    - name: Regenerate default containerd config when invalid
+      command: bash -lc "containerd config default > {{ containerd_conf }}"
+      when: containerd_dump.rc != 0
+
+    - name: Ensure SystemdCgroup = true
+      lineinfile:
+        path: "{{ containerd_conf }}"
+        regexp: '^(\s*)SystemdCgroup\s*=\s*false'
+        line: '\1SystemdCgroup = true'
+        backrefs: yes
+      register: cg_change
+
+    - name: Ensure sandbox_image line is set (replace if exists)
+      replace:
+        path: "{{ containerd_conf }}"
+        regexp: '^\s*sandbox_image\s*=\s*".*"\s*$'
+        replace: '  sandbox_image = "{{ pause_image }}"'
+      register: sb_replace
+
+    - name: Check if sandbox_image exists after replace
+      shell: grep -E '^\s*sandbox_image\s*=\s*".*"\s*$' "{{ containerd_conf }}" || true
+      register: sb_exists
+      changed_when: false
+
+    - name: Insert sandbox_image under CRI section when missing
+      lineinfile:
+        path: "{{ containerd_conf }}"
+        insertafter: '^\[plugins\."io\.containerd\.grpc\.v1\.cri"\]'
+        line: '  sandbox_image = "{{ pause_image }}"'
+      when: sb_exists.stdout | length == 0
+      register: sb_insert
+
+    - name: Restart containerd if config changed (safe)
+      block:
+        - name: Restart containerd
+          systemd:
+            name: containerd
+            state: restarted
+            enabled: yes
+      when: (cg_change is changed) or (sb_replace is changed) or (sb_insert is changed)
+      rescue:
+        - name: Emergency regenerate default config (on restart failure)
+          command: bash -lc "containerd config default > {{ containerd_conf }}"
+
+        - name: Re-apply safe edits after emergency regenerate - SystemdCgroup
+          lineinfile:
+            path: "{{ containerd_conf }}"
+            regexp: '^(\s*)SystemdCgroup\s*=\s*false'
+            line: '\1SystemdCgroup = true'
+            backrefs: yes
+
+        - name: Re-apply safe edits after emergency regenerate - sandbox_image
+          lineinfile:
+            path: "{{ containerd_conf }}"
+            insertafter: '^\[plugins\."io\.containerd\.grpc\.v1\.cri"\]'
+            line: '  sandbox_image = "{{ pause_image }}"'
+
+        - name: Final restart containerd after repair
+          systemd:
+            name: containerd
+            state: restarted
+            enabled: yes
+
+    - name: Ensure join script is executable
+      file:
+        path: "{{ join_script_path }}"
+        mode: "0755"
+      when: not kubelet_conf_stat.stat.exists
+
+    - name: Run kubeadm join (idempotent)
+      shell: |
+        set -e
+        {{ join_script_path }}
+      args:
+        executable: /bin/bash
+      register: join_run
+      changed_when: >
+        'This node has joined the cluster' in (join_run.stdout + join_run.stderr)
+      when: not kubelet_conf_stat.stat.exists
+
+    - name: Ensure kubelet is enabled and started
+      systemd:
+        name: kubelet
+        enabled: yes
+        state: started

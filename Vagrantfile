@@ -5,11 +5,13 @@ Vagrant.configure(2) do |config|
 
   # Change to add more nodes
   NodeCount = 3
-  Provider = "virtualbox" # change if needed
+  Provider = "vmware_desktop" # change if needed
   
   # global requirements
-  # config.vm.provision "shell", path: "requirements.sh", :args => NodeCount
-  config.vm.box = "bento/ubuntu-22.04" # change if needed 
+  config.vm.provision "ansible" do |ansible|
+        ansible.playbook = "scripts/requirements.yml"
+      end
+  config.vm.box = "bento/ubuntu-22.04-arm64" # change if needed 
 
   # Kubernetes controlplane
   config.vm.define "control-plane" do |controlplane|
